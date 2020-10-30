@@ -1,91 +1,65 @@
-import { snackbar } from '../snackbar.js';
+let video = null;
+let image = null;
+let canvas = null;
+let canvasCtx = null;
+let decoder = null;
 
-var QRReader = {};
+let selectedDeviceId;
+let selectedDeviceIndex;
 
-QRReader.active = false;
-QRReader.webcam = null;
-QRReader.canvas = null;
-QRReader.ctx = null;
-QRReader.decoder = null;
-
-QRReader.setCanvas = () => {
-  QRReader.canvas = document.createElement('canvas');
-  QRReader.ctx = QRReader.canvas.getContext('2d');
+const setCanvas = () => {
+  canvas = document.createElement('canvas');
+  canvasCtx = canvas.getContext('2d');
 };
 
-function setPhotoSourceToScan(forSelectedPhotos) {
-  if (!forSelectedPhotos && window.isMediaStreamAPISupported) {
-    QRReader.webcam = document.querySelector('video');
-  } else {
-    QRReader.webcam = document.querySelector('img');
-  }
-}
+const setPhotoSource = () => {
+  video = document.getElementById('video');
+  image = document.getElementById('image');
+};
 
-QRReader.init = () => {
-  var baseurl = '';
-  var streaming = false;
+const setCanvasProperties = () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+};
 
-  // Init Webcam + Canvas
-  setPhotoSourceToScan();
-
-  QRReader.setCanvas();
-  QRReader.decoder = new Worker(baseurl + 'decoder.js');
-
-  if (window.isMediaStreamAPISupported) {
-    // Resize webcam according to input
-    QRReader.webcam.addEventListener(
-      'play',
-      function(ev) {
-        if (!streaming) {
-          setCanvasProperties();
-          streaming = true;
-        }
-      },
-      false
-    );
-  } else {
-    setCanvasProperties();
-  }
-
-  function setCanvasProperties() {
-    QRReader.canvas.width = window.innerWidth;
-    QRReader.canvas.height = window.innerHeight;
-  }
-
-  function startCapture(constraints) {
-    navigator.mediaDevices
-      .getUserMedia(constraints)
-      .then(function(stream) {
-        QRReader.webcam.srcObject = stream;
-        QRReader.webcam.setAttribute('playsinline', true);
-        QRReader.webcam.setAttribute('controls', true);
-        setTimeout(() => {
-          document.querySelector('video').removeAttribute('controls');
-        });
-      })
-      .catch(function(err) {
-        console.log('Error occurred ', err);
-        showErrorMsg();
+const startCapture = (constraints) => {
+  return navigator.mediaDevices
+    .getUserMedia(constraints)
+    .then(function(stream) {
+      video.srcObject = stream;
+      video.setAttribute('playsinline', true);
+      video.setAttribute('controls', true);
+      setTimeout(() => {
+        document.querySelector('video').removeAttribute('controls');
       });
-  }
+    });
+};
 
-  if (window.isMediaStreamAPISupported) {
-    navigator.mediaDevices
+const init = (streaming) => {
+  setPhotoSource();
+  setCanvas();
+
+  decoder = new Worker('decoder.js');
+
+  if (streaming && window.isMediaStreamAPISupported) {
+    return navigator.mediaDevices
       .enumerateDevices()
       .then(function(devices) {
-        var device = devices.filter(function(device) {
-          var deviceLabel = device.label.split(',')[1];
+        const videoInputDevices = devices.filter(function(device) {
           if (device.kind == 'videoinput') {
             return device;
           }
         });
 
-        var constraints;
-        if (device.length > 1) {
+        let constraints;
+        if (videoInputDevices.length) {
+          selectedDeviceIndex = videoInputDevices.length - 1;
+          const selectedDevice = videoInputDevices[selectedDeviceIndex];
+          selectedDeviceId = selectedDevice.deviceId;
           constraints = {
             video: {
               mandatory: {
-                sourceId: device[device.length - 1].deviceId ? device[device.length - 1].deviceId : null
+                sourceId: selectedDeviceId ? selectedDeviceId : null
               }
             },
             audio: false
@@ -94,83 +68,151 @@ QRReader.init = () => {
           if (window.iOS) {
             constraints.video.facingMode = 'environment';
           }
-          startCapture(constraints);
-        } else if (device.length) {
-          constraints = {
-            video: {
-              mandatory: {
-                sourceId: device[0].deviceId ? device[0].deviceId : null
-              }
-            },
-            audio: false
-          };
-
-          if (window.iOS) {
-            constraints.video.facingMode = 'environment';
-          }
-
-          if (!constraints.video.mandatory.sourceId && !window.iOS) {
-            startCapture({ video: true });
-          } else {
-            startCapture(constraints);
-          }
-        } else {
-          startCapture({ video: true });
         }
+        else {
+          selectedDeviceId = undefined;
+          selectedDeviceIndex = undefined;
+          constraints = { video: true };
+        }
+        return startCapture(constraints)
+        .then(() => {
+          return { devices: videoInputDevices.map((device) => device.label), selected: selectedDeviceIndex }
+        });
       })
-      .catch(function(error) {
-        showErrorMsg();
-        console.error('Error occurred : ', error);
+      .catch(function() {
+        return false;
       });
   }
-
-  function showErrorMsg() {
-    window.noCameraPermission = true;
-    document.querySelector('.custom-scanner').style.display = 'none';
-    snackbar.show('Unable to access the camera', 10000);
+  else {
+    return Promise.resolve(false);
   }
+
 };
 
-/**
- * \brief QRReader Scan Action
- * Call this to start scanning for QR codes.
- *
- * \param A function(scan_result)
- */
-QRReader.scan = function(callback, forSelectedPhotos) {
-  QRReader.active = true;
-  QRReader.setCanvas();
-  function onDecoderMessage(event) {
-    if (event.data.length > 0) {
-      var qrid = event.data[0][2];
-      QRReader.active = false;
-      callback(qrid);
+const nextDevice = () => {
+  return navigator.mediaDevices
+  .enumerateDevices()
+  .then(function(devices) {
+    const videoInputDevices = devices.filter(function(device) {
+      if (device.kind == 'videoinput') {
+        return device;
+      }
+    });
+
+    let selectedDevice = selectedDeviceId && videoInputDevices[selectedDeviceIndex] && videoInputDevices[selectedDeviceIndex].deviceId === selectedDeviceId && videoInputDevices[selectedDeviceIndex];
+    if(selectedDeviceId && !selectedDevice) {
+      for(let i = 0; i < videoInputDevices.length; i++) {
+        if(videoInputDevices[i].deviceId === selectedDeviceId) {
+          selectedDevice = videoInputDevices[i];
+          selectedDeviceIndex = i;
+          break;
+        }
+      }
+      if(!selectedDevice) {
+        selectedDevice = videoInputDevices[selectedDeviceIndex];
+      }
     }
-    setTimeout(newDecoderFrame, 0);
-  }
+    if(selectedDevice) {
+      selectedDeviceIndex = (selectedDeviceIndex + 1) % videoInputDevices.length;
+      selectedDevice = videoInputDevices[selectedDeviceIndex];
+      selectedDeviceId = selectedDevice.deviceId;
+    }
+    else if(videoInputDevices.length) {
+      selectedDeviceIndex = 0;
+      selectedDevice = videoInputDevices[0];
+      selectedDeviceId = selectedDevice.deviceId;
+    }
 
-  QRReader.decoder.onmessage = onDecoderMessage;
+    let constraints;
+    if (selectedDevice) {
+      constraints = {
+        video: {
+          mandatory: {
+            sourceId: selectedDeviceId ? selectedDeviceId : null
+          }
+        },
+        audio: false
+      };
 
-  setTimeout(() => {
-    setPhotoSourceToScan(forSelectedPhotos);
+      if (window.iOS) {
+        constraints.video.facingMode = 'environment';
+      }
+    }
+    else {
+      selectedDeviceId = undefined;
+      selectedDeviceIndex = undefined;
+      constraints = { video: true };
+    }
+    return startCapture(constraints)
+    .then(() => {
+      return { devices: videoInputDevices.map((device) => device.label), selected: selectedDeviceIndex }
+    });
   });
+};
 
-  // Start QR-decoder
-  function newDecoderFrame() {
-    if (!QRReader.active) return;
+const newDecoderFrame = (webcam) => {
+  setCanvasProperties();
+  setTimeout(() => {
     try {
-      QRReader.ctx.drawImage(QRReader.webcam, 0, 0, QRReader.canvas.width, QRReader.canvas.height);
-      var imgData = QRReader.ctx.getImageData(0, 0, QRReader.canvas.width, QRReader.canvas.height);
-
+      canvasCtx.drawImage(webcam, 0, 0, canvas.width, canvas.height);
+      var imgData = canvasCtx.getImageData(0, 0, canvas.width, canvas.height);
+  
       if (imgData.data) {
-        QRReader.decoder.postMessage(imgData);
+        decoder.postMessage(imgData);
       }
     } catch (e) {
       // Try-Catch to circumvent Firefox Bug #879717
-      if (e.name == 'NS_ERROR_NOT_AVAILABLE') setTimeout(newDecoderFrame, 0);
+      if (e.name == 'NS_ERROR_NOT_AVAILABLE') setTimeout(() => newDecoderFrame(webcam), 0);
     }
+  }, 1);
+}
+
+/**
+ * starts continuous scan
+ * @param {number} interval the time in milliseconds to wait between scans (default 1)
+ * @param {Function} a callback function that would be called for every successful scan with the results
+ */
+const startScanning = (interval, callback) => {
+  function onDecoderMessage(event) {
+    if (event.data.length > 0) {
+      var qrid = event.data[0][2];
+      callback(qrid);
+    }
+    setTimeout(function() {
+      newDecoderFrame(video);
+    }, interval || 1);
   }
-  newDecoderFrame();
+
+  decoder.onmessage = onDecoderMessage;
+
+  // Start QR-decoder
+  newDecoderFrame(video);
 };
 
-export default QRReader;
+/**
+ * starts single scan
+ * @param {Function} a callback function that would be called after scan. if scan was successful the result is supplied as first param, else null will be sent
+ */
+const scanSingle = (callback) => {
+  function onDecoderMessage(event) {
+    if (event.data.length > 0) {
+      var qrid = event.data[0][2];
+      callback(qrid);
+    }
+    else {
+      callback(null);
+    }
+  }
+
+  decoder.onmessage = onDecoderMessage;
+
+  // Start QR-decoder
+  newDecoderFrame(image);
+};
+
+export default {
+  init,
+  startScanning,
+  scanSingle,
+  nextDevice
+};
