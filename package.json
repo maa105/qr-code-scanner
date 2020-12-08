@@ -1,7 +1,7 @@
 {
 	"name": "qr-scanner-maa",
 	"description": "qr scanner frame to include in your app as iframe",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"scripts": {
 		"start": "webpack-dev-server --hot --inline --open --mode=development",
 		"deploy": "npm run build && bash deploy.sh",
