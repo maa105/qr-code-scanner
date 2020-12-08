@@ -17,7 +17,7 @@ QR scanner frame to embed to your project as an iframe. You can communicate with
 1. Clone this repo
 
   ```bash
-  git clone https://github.com/maa105/qr-scanner
+  git clone https://github.com/maa105/qr-code-scanner
   ```
 
 2. Installation
