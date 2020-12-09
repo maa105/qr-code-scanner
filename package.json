@@ -9,8 +9,8 @@
 		"stats": "cross-env NODE_ENV=production webpack-cli --mode=production --profile --json > stats.json",
 		"precommit": "lint-staged",
 		"pretty": "prettier --write 'app/**/*.js'"
-  },
-  "repository": "https://github.com/maa105/qr-code-scanner",
+	},
+	"repository": "https://github.com/maa105/qr-code-scanner",
 	"lint-staged": {
 		"*.{js,css}": [
 			"npm run pretty",

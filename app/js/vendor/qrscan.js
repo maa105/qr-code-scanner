@@ -23,16 +23,37 @@ const setCanvasProperties = () => {
 };
 
 const startCapture = (constraints) => {
-  return navigator.mediaDevices
+  return new Promise((resolve, reject) => {
+    let done;
+    const timer = setTimeout(() => {
+      if(!done) {
+        done = true;
+        reject('TIMEOUT');
+      }
+    }, 5000)
+    navigator.mediaDevices
     .getUserMedia(constraints)
     .then(function(stream) {
-      video.srcObject = stream;
-      video.setAttribute('playsinline', true);
-      video.setAttribute('controls', true);
-      setTimeout(() => {
-        document.querySelector('video').removeAttribute('controls');
-      });
-    });
+      if(!done) {
+        clearTimeout(timer);
+        done = true;
+        video.srcObject = stream;
+        video.setAttribute('playsinline', true);
+        video.setAttribute('controls', true);
+        setTimeout(() => {
+          document.querySelector('video').removeAttribute('controls');
+        });
+        resolve();
+      }
+    })
+    .catch((err) => {
+      if(!done) {
+        clearTimeout(timer);
+        done = true;
+        reject(err);
+      }
+    })
+  });
 };
 
 const init = (streaming) => {
@@ -56,14 +77,19 @@ const init = (streaming) => {
           selectedDeviceIndex = videoInputDevices.length - 1;
           const selectedDevice = videoInputDevices[selectedDeviceIndex];
           selectedDeviceId = selectedDevice.deviceId;
-          constraints = {
-            video: {
-              mandatory: {
-                sourceId: selectedDeviceId ? selectedDeviceId : null
-              }
-            },
-            audio: false
-          };
+          if(selectedDeviceId) {
+            constraints = {
+              video: {
+                mandatory: {
+                  sourceId: selectedDeviceId ? selectedDeviceId : null
+                }
+              },
+              audio: false
+            };
+          }
+          else {
+            constraints = { video: true };
+          }
 
           if (window.iOS) {
             constraints.video.facingMode = 'environment';
@@ -76,7 +102,10 @@ const init = (streaming) => {
         }
         return startCapture(constraints)
         .then(() => {
-          return { devices: videoInputDevices.map((device) => device.label), selected: selectedDeviceIndex }
+          return { devices: videoInputDevices.map((device) => device.label), selected: selectedDeviceIndex };
+        })
+        .catch(() => {
+          return { devices: videoInputDevices.map((device) => device.label), selected: selectedDeviceIndex };
         });
       })
       .catch(function() {
